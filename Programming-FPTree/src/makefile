@@ -39,7 +39,7 @@ $(UTILITY) : utility.cpp $(HEADER_DIR)/utility/utility.h
 	$(CXX) $(CXXFLAGS) -c fptree.cpp -I $(HEADER_DIR) -g -o $@
 
 $(PALLOCATOR) : p_allocator.cpp $(HEADER_DIR)/utility/p_allocator.h
-	$(CXX) $(CXXFLAGS) -c p_allocator.cpp -I $(HEADER_DIR) -g -o $@
+	$(CXX) $(CXXFLAGS) -c p_allocator.cpp -I $(HEADER_DIR) -g -o $@ -lpmem
 
 $(CLHASH) : clhash.c $(HEADER_DIR)/utility/clhash.h
 	$(CC) $(CFLAGS) -c clhash.c -I $(HEADER_DIR) -g -o $@

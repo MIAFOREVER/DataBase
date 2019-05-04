@@ -99,14 +99,14 @@ utility.o : $(USER_DIR)/utility.cpp $(USER_HEADER_DIR)/utility/utility.h
 	$(CXX) $(CXXFLAGS) -c $(USER_DIR)/utility.cpp -I $(USER_HEADER_DIR) -o $@
 
 p_allocator.o : $(USER_DIR)/p_allocator.cpp $(USER_HEADER_DIR)/utility/p_allocator.h
-	$(CXX) $(CXXFLAGS) -c $(USER_DIR)/p_allocator.cpp -I $(USER_HEADER_DIR) -o $@
+	$(CXX) $(CXXFLAGS) -c $(USER_DIR)/p_allocator.cpp -I $(USER_HEADER_DIR) -o $@ 
 
 clhash.o : $(USER_DIR)/clhash.c $(USER_HEADER_DIR)/utility/clhash.h
 	$(CC) $(CFLAGS) -c $(USER_DIR)/clhash.c -I $(USER_HEADER_DIR) -o $@
 
 # utility test
 $(UTILITY_TEST) : utility_test.o $(GTEST_LIBS) $(TEMP)
-	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -I ${GTEST_DIR}/include  -lpthread $^ -o $@ 
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -I ${GTEST_DIR}/include  -lpthread $^ -o $@ -lpmem
 
 utility_test.o : $(GTEST_LIB_DIR)/utility_test.cpp
 	$(CXX) $(CXXFLAGS) -c $(GTEST_LIB_DIR)/utility_test.cpp -I $(USER_HEADER_DIR) -o $@
