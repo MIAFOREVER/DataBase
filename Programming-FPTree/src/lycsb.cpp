@@ -1,18 +1,20 @@
 #include <leveldb/db.h>
 #include <string>
 
+#include <fstream>
+
 #define KEY_LEN 8
 #define VALUE_LEN 8
 using namespace std;
 
-const string workload = "";
+const string workload = "../../workloads/";
 
-const string load = workload + ""; // TODO: the workload_load filename
-const string run  = workload + ""; // TODO: the workload_run filename
+const string load = workload + "220w-rw-50-50-load.txt"; // TODO: the workload_load filename
+const string run  = workload + "220w-rw-50-50-run.txt"; // TODO: the workload_run filename
 
-const string filePath = "";
+const string filePath = "/home/ubuntu/pmemdir";
 
-const int READ_WRITE_NUM = 0; // TODO: how many operations
+const int READ_WRITE_NUM = 2200000; // TODO: how many operations
 
 int main()
 {        
@@ -20,13 +22,14 @@ int main()
     leveldb::Options options;
     leveldb::WriteOptions write_options;
     // TODO: open and initial the levelDB
-    leveldb::Status status = leveldb::DB::Open(options, workload, &db);
+    options.create_if_missing = true;
+    leveldb::Status status = leveldb::DB::Open(options, filePath, &db);
     assert(status.ok());
 
     uint64_t inserted = 0, queried = 0, t = 0;
     uint64_t* key = new uint64_t[2200000]; // the key and value are same
     bool* ifInsert = new bool[2200000]; // the operation is insertion or not
-	FILE *ycsb_load, *ycsb_run; // the files that store the ycsb operations
+	//FILE *ycsb_load = NULL, *ycsb_run = NULL; // the files that store the ycsb operations
 	char *buf = NULL;
 	size_t len = 0;
     struct timespec start, finish; // use to caculate the time
@@ -34,11 +37,28 @@ int main()
 
     printf("Load phase begins \n");
     // TODO: read the ycsb_load and store
-    
+
+    fstream ycsb_load(load);
+    if(!ycsb_load.is_open())
+        printf("Fail to load file load.txt! \n");
+    string buffer,num;
+    for(int i=0;i<READ_WRITE_NUM;i++)
+    {
+        ycsb_load >> buffer >> num;
+        key[i] = stoull(num);
+    }
+
     clock_gettime(CLOCK_MONOTONIC, &start);
 
     // TODO: load the workload in LevelDB
-
+    leveldb::Status s;
+    for(int i=0;i<READ_WRITE_NUM;i++)
+    {
+        s = db->Put(leveldb::WriteOptions(),leveldb::Slice((char*)&key[i],8), leveldb::Slice((char*)&key[i],8));
+        assert(s.ok());
+        if (s.ok())
+            inserted++;
+    }
     clock_gettime(CLOCK_MONOTONIC, &finish);
 	single_time = (finish.tv_sec - start.tv_sec) * 1000000000.0 + (finish.tv_nsec - start.tv_nsec);
 
@@ -50,14 +70,65 @@ int main()
     inserted = 0;		
 
     // TODO:read the ycsb_run and store
-
+    bool* ifRead = new bool[2200000];
+    fstream ycsb_run(run);
+    if(!ycsb_run.is_open())
+        printf("Fail to load file run.txt! \n");
+    for(int i=0;i<READ_WRITE_NUM;i++)
+    {
+        string temp;
+        ycsb_run>>buffer>>num;
+        key[i] = stoull(num);
+        temp = buffer;
+        if(temp == "INSERT")
+            ifInsert[i] = 1; 
+        else
+        {
+            if(temp == "READ")
+                ifRead[i] = 1;
+            else
+                ifRead[i] = 0;
+            ifInsert[i] = 0;
+        }
+    }       
     clock_gettime(CLOCK_MONOTONIC, &start);
 
     // TODO: operate the levelDB
-
+    for(int i=0;i<READ_WRITE_NUM;i++)
+    {
+        operation_num++;
+        if(ifInsert[i] == 1)
+        {
+            leveldb::Status s = db->Put(leveldb::WriteOptions(), leveldb::Slice((char*)&key[i],8), leveldb::Slice((char*)&key[i],8));
+            assert(s.ok());
+            if (s.ok())
+            {
+                inserted++;
+                ifInsert[i] = true;
+            } 
+        }
+        else
+        {
+            if(ifRead[i] == 1)
+            {
+                string value;
+                leveldb::Status s = db->Get(leveldb::ReadOptions(), leveldb::Slice((char*)&key[i],8), &value);
+            }
+            else
+            {
+                string value;
+                leveldb::Status s = db->Get(leveldb::ReadOptions(), leveldb::Slice((char*)&key[i],8), &value);
+                if (s.ok()) s = db->Put(leveldb::WriteOptions(), leveldb::Slice((char*)&key[i],8), leveldb::Slice((char*)&key[i],8));   
+            }
+        }
+    }
 	clock_gettime(CLOCK_MONOTONIC, &finish);
 	single_time = (finish.tv_sec - start.tv_sec) + (finish.tv_nsec - start.tv_nsec) / 1000000000.0;
     printf("Run phase finishes: %d/%d items are inserted/searched\n", operation_num - inserted, inserted);
     printf("Run phase throughput: %f operations per second \n", READ_WRITE_NUM/single_time);	
+    delete db;
+    delete key;
+    delete ifInsert;
+    delete ifRead;
     return 0;
 }
