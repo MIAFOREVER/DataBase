@@ -42,7 +42,15 @@ $(PALLOCATOR) : p_allocator.cpp $(HEADER_DIR)/utility/p_allocator.h
 	$(CXX) $(CXXFLAGS) -c p_allocator.cpp -I $(HEADER_DIR) -g -o $@
 
 $(CLHASH) : clhash.c $(HEADER_DIR)/utility/clhash.h
-	$(CXX) $(CXXFLAGS) -c clhash.c -I $(HEADER_DIR) -g -o $@
+	$(CC) $(CFLAGS) -c clhash.c -I $(HEADER_DIR) -g -o $@
+
+$(LYCSB) : lycsb.cpp 
+	$(CXX) $(CXXFLAGS) -c lycsb.cpp -g -o lycsb.o 
+	$(CXX) $(CXXFLAGS) lycsb.o -g -o $@ -pthread -lleveldb
+
+$(YCSB) : ycsb.cpp $(HEADER_DIR)/fptree/fptree.h $(FPTREE) $(PALLOCATOR)
+	$(CXX) $(CXXFLAGS) -c ycsb.cpp -I $(HEADER_DIR) -g -o ycsb.o
+	$(CXX) $(CXXFLAGS) -o $@ ycsb.o $(FPTREE) $(PALLOCATOR) -pthread -lleveldb
 
 $(BIN):
 	mkdir -p bin
