@@ -75,6 +75,16 @@ PAllocator::PAllocator() {
          */
         if(!allocatorCatalog.is_open()){
             ofstream temp(allocatorCatalogPath, ios::out | ios::binary);
+
+            uint64_t value = 1;
+            temp.write((char *)&(value), sizeof(uint64_t));
+            value = 0;
+            temp.write((char *)&(value), sizeof(uint64_t));
+            value = 1;
+            temp.write((char *)&(value), sizeof(uint64_t));
+            value = 0;
+            temp.write((char *)&(value), sizeof(uint64_t));
+
             temp.close();
             allocatorCatalog.open(allocatorCatalogPath, ios::in | ios::binary);
             if(!allocatorCatalog.is_open()) //check
@@ -83,6 +93,12 @@ PAllocator::PAllocator() {
         if(!freeListFile.is_open()){
             maxFileId = 1, freeNum = 0;
             ofstream temp(freeListPath, ios::out | ios::binary);
+
+            uint64_t value = 1;
+            temp.write((char *)&(value), sizeof(uint64_t));
+            value = 0;
+            temp.write((char *)&(value), sizeof(uint64_t));
+
             temp.close();
             freeListFile.open(freeListPath, ios::in | ios::binary);
             if(!freeListFile.is_open()) //check
@@ -132,7 +148,16 @@ char* PAllocator::getLeafPmemAddr(PPointer p) {
 // return 
 bool PAllocator::getLeaf(PPointer &p, char* &pmem_addr) {
     // TODO
-    return false;
+    if(freeList.size() <= 0)
+        return false;
+    vector<PPointer>::iterator iter = freeList.begin();
+    p.fileId = iter->fileId, p.offset = iter->offset;
+    freeList.erase(iter);
+    size_t mapped_len;
+    int is_pmem;
+    string name = DATA_DIR + std::to_string(p.fileId);
+    pmem_addr = (char *)pmem_map_file(name.c_str(), LEAF_GROUP_HEAD + 56 * 16 *16, PMEM_FILE_CREATE, 0666, &mapped_len, &is_pmem);
+    return true;
 }
 
 bool PAllocator::ifLeafUsed(PPointer p) {
