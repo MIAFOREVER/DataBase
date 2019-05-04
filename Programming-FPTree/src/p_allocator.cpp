@@ -144,12 +144,7 @@ char* PAllocator::getLeafPmemAddr(PPointer p) {
     // 得到map中存储的PPointer对应的fileId
     if(p.fileId == ILLEGAL_FILE_ID || p.fileId >= maxFileId)
         return NULL;
-    std::map<uint64_t, char*>::iterator iter;
-    iter = fId2PmAddr.find(p.fileId);
-    if(iter != fId2PmAddr.end())
-        return (iter->second + p.offset);
-    else
-        return NULL;
+    return fId2PmAddr[p.fileId] + p.offset;
 }
 
 // get and use a leaf for the fptree leaf allocation
