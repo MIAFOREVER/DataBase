@@ -53,17 +53,14 @@ PAllocator::PAllocator() {
         // TODO
         // 初始化maxFileId, freeNum, startLeaf, freeList
         uint64_t value[5];
-        allocatorCatalog.read((char*)value, 5 * sizeof(uint64_t));
-        maxFileId = value[0] + 1, freeNum = value[1];
+        allocatorCatalog.read((char*)(&value), 4 * sizeof(uint64_t));
+        maxFileId = value[0], freeNum = value[1];
         startLeaf.fileId = value[2];
         startLeaf.offset = value[3];
 
-        uint64_t free_list_value[5];
-        while(!freeListFile.eof()){
-            freeListFile.read((char*)free_list_value, 2 * sizeof(uint64_t));
+        for(uint64_t i = 0; i < freeNum; ++i){
             PPointer temp;
-            temp.fileId = free_list_value[0];
-            temp.fileId = free_list_value[1];
+            freeListFile.read((char *)(&temp), sizeof(PPointer));
             freeList.push_back(temp);
         }
     } else {
@@ -74,7 +71,7 @@ PAllocator::PAllocator() {
          * ios::out, 如果文件不存在则创建, 如果存在则清空内容
          */
         if(!allocatorCatalog.is_open()){
-            ofstream temp(allocatorCatalogPath, ios::out | ios::binary);
+            ofstream temp(allocatorCatalogPath, ios::out);
 
             uint64_t value = 1;
             temp.write((char *)&(value), sizeof(uint64_t));
@@ -92,7 +89,7 @@ PAllocator::PAllocator() {
         }
         if(!freeListFile.is_open()){
             maxFileId = 1, freeNum = 0;
-            ofstream temp(freeListPath, ios::out | ios::binary);
+            ofstream temp(freeListPath, ios::out);
 
             uint64_t value = 1;
             temp.write((char *)&(value), sizeof(uint64_t));
@@ -104,6 +101,7 @@ PAllocator::PAllocator() {
             if(!freeListFile.is_open()) //check
                 cout << "open freeListFile failed!" << endl;
         }
+        maxFileId = 1, freeNum = 0;
 
     }
     this->initFilePmemAddr();
@@ -112,6 +110,14 @@ PAllocator::PAllocator() {
 PAllocator::~PAllocator() {
     // TODO
     persistCatalog();
+    string freeListPath = DATA_DIR + P_ALLOCATOR_FREE_LIST;
+    ofstream mfile(freeListPath, ios::out|ios::binary);
+    for(int i = 0; i < freeNum; ++i){
+        PPointer temp = freeList[i];
+        mfile.write((char *)(&temp), sizeof(PPointer));
+    }
+    mfile.close();
+    pAllocator = nullptr;
 }
 
 // memory map all leaves to pmem address, storing them in the fId2PmAddr
@@ -123,7 +129,7 @@ void PAllocator::initFilePmemAddr() {
     char *pmem_addr;
     for(int i = 1; i < maxFileId; ++i){
         string name = DATA_DIR + std::to_string(i);
-        pmem_addr = (char *)pmem_map_file(name.c_str(), LEAF_GROUP_HEAD + 56 * 16 *16, PMEM_FILE_CREATE, 0666, &mapped_len, &is_pmem);
+        pmem_addr = (char *)pmem_map_file(name.c_str(), LEAF_GROUP_HEAD + LEAF_GROUP_AMOUNT * calLeafSize(), PMEM_FILE_CREATE, 0666, &mapped_len, &is_pmem);
         if(pmem_addr == NULL){
             cout << "[error]: pmem_map_file " << i << " failed" << std::endl;
             continue;
@@ -136,10 +142,12 @@ void PAllocator::initFilePmemAddr() {
 char* PAllocator::getLeafPmemAddr(PPointer p) {
     // TODO
     // 得到map中存储的PPointer对应的fileId
+    if(p.fileId == ILLEGAL_FILE_ID || p.fileId >= maxFileId)
+        return NULL;
     std::map<uint64_t, char*>::iterator iter;
     iter = fId2PmAddr.find(p.fileId);
     if(iter != fId2PmAddr.end())
-        return iter->second;
+        return (iter->second + p.offset);
     else
         return NULL;
 }
@@ -148,15 +156,28 @@ char* PAllocator::getLeafPmemAddr(PPointer p) {
 // return 
 bool PAllocator::getLeaf(PPointer &p, char* &pmem_addr) {
     // TODO
-    if(freeList.size() <= 0)
-        return false;
-    vector<PPointer>::iterator iter = freeList.begin();
-    p.fileId = iter->fileId, p.offset = iter->offset;
-    freeList.erase(iter);
-    size_t mapped_len;
-    int is_pmem;
-    string name = DATA_DIR + std::to_string(p.fileId);
-    pmem_addr = (char *)pmem_map_file(name.c_str(), LEAF_GROUP_HEAD + 56 * 16 *16, PMEM_FILE_CREATE, 0666, &mapped_len, &is_pmem);
+    if(freeList.empty()){
+        if(!newLeafGroup()){
+            return false;
+        }
+    }
+    p = freeList.back();
+    pmem_addr = getLeafPmemAddr(p);
+    freeList.pop_back();
+    --freeNum;
+    string name = DATA_DIR + to_string(p.fileId); 
+    fstream mfile(name, ios::in | ios::out | ios::binary);
+    uint64_t usedNum;
+
+    mfile.read((char *)&(usedNum), sizeof(uint64_t));
+    ++usedNum;
+    mfile.seekp(0, ios::beg);
+    mfile.write((char *)&(usedNum), sizeof(uint64_t));
+
+    uint8_t mbyte = 1;
+    mfile.seekp(sizeof(uint64_t) + (p.offset - LEAF_GROUP_HEAD)/calLeafSize(), ios::beg);
+    mfile.write((char *)&(mbyte), sizeof(uint8_t));
+    mfile.close();
     return true;
 }
 
@@ -165,15 +186,10 @@ bool PAllocator::ifLeafUsed(PPointer p) {
     // 读取文件的bitmap
     string name = DATA_DIR + to_string(p.fileId);
     ifstream mfile(name, ios::in | ios::binary);
-    Byte data[30];
-    mfile.read((char *)data, 30);
-    mfile.close();
-    //得到每个叶子的大小, 然后用offset除以叶子的大小即为对应的是第几个叶子
-    //每个叶子为56 * 16字节
-    int moffset = p.offset / (56 * 16);
-    if(data[8 + moffset] == 1 || data[8 + moffset] == '1')
-        return true;
-    return false;
+    Byte data = 0;
+    mfile.seekg(sizeof(uint64_t) + (p.offset - LEAF_GROUP_HEAD)/calLeafSize(), ios::beg);
+    mfile.read((char *)&(data), sizeof(uint8_t));
+    return (data == 1)? true: false;
 }
 
 bool PAllocator::ifLeafFree(PPointer p) {
@@ -187,11 +203,13 @@ bool PAllocator::ifLeafFree(PPointer p) {
 bool PAllocator::ifLeafExist(PPointer p) {
     // TODO
     // 检查PPointer对应的文件是否存在, 如果存在则说明此叶子存在
-    string name = DATA_DIR + to_string(p.fileId);
+    if(p.fileId == ILLEGAL_FILE_ID || p.fileId >= maxFileId)
+        return false;
+    /*string name = DATA_DIR + to_string(p.fileId);
     ifstream mfile(name, ios::in | ios::binary);
     if(!mfile.is_open())
         return false;
-    mfile.close();
+    mfile.close();*/
     return true;
 }
 
@@ -217,14 +235,12 @@ bool PAllocator::persistCatalog() {
     // TODO
     // 持久化catalog文件
     string name = DATA_DIR + P_ALLOCATOR_CATALOG_NAME;
-    size_t mapped_len;
-    int is_pmem;
-    char *pmem_addr;
-    if((pmem_addr = (char *)pmem_map_file(name.c_str(), 16 + sizeof(PPointer), PMEM_FILE_CREATE, 0666, &mapped_len, &is_pmem)) == NULL){
-        cout << "[error]: persist leaf group failed in mem_map" << endl;
+    ofstream mfile(name, ios::out | ios::binary);
+    if(!mfile.is_open())
         return false;
-    }
-    pmem_persist(pmem_addr, 16 + sizeof(PPointer));
+    mfile.write((char *)(&maxFileId), sizeof(uint64_t));
+    mfile.write((char *)(&freeNum), sizeof(uint64_t));
+    mfile.write((char *)(&startLeaf), sizeof(PPointer));
     return true;
 }
 
@@ -238,13 +254,20 @@ bool PAllocator::newLeafGroup() {
     // maxFileId代表应该创建的文件名称
     // 一个leaf的度为56, 也就是有56个元素(键值对), 一个键值对为16字节, 所以一共是8 + 16 + 56 * 16 * 16 = 14360字节
     string name = DATA_DIR + std::to_string(maxFileId);
-    size_t mapped_len;
-    int is_pmem;
-    char *pmem_addr;
-    if((pmem_addr = (char *)pmem_map_file(name.c_str(), LEAF_GROUP_HEAD + 56 * 16 * 16, PMEM_FILE_CREATE, 0666, &mapped_len, &is_pmem)) == NULL){
-        cout << "create leaf group failed!" << endl;
+    ofstream mfile(name, ios::out | ios::binary);
+    if(!mfile.is_open())
         return false;
+    uint64_t usedNum = 0;
+    uint8_t bit[16 * (1 + calLeafSize())];
+    memset(bit, 0, sizeof(bit));
+    mfile.write((char *)&usedNum, sizeof(uint64_t));
+    mfile.write((char *)bit, sizeof(bit));
+    for(int i = 0; i < 16; ++i){
+        PPointer temp;
+        temp.fileId = maxFileId, temp.offset = LEAF_GROUP_HEAD + i * calLeafSize();
+        freeList.push_back(temp);
     }
     ++maxFileId;
+    freeNum += 16;
     return true;
 }
