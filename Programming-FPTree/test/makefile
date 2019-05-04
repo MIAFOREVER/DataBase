@@ -113,7 +113,7 @@ utility_test.o : $(GTEST_LIB_DIR)/utility_test.cpp
 
 # fptree test
 $(FPTREE_TEST) : fptree_test.o $(GTEST_LIBS) $(TEMP)
-	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -I ${GTEST_DIR}/include -lpthread $^ -o $@ 
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -I ${GTEST_DIR}/include -lpthread $^ -o $@ -lpmem
 
 fptree_test.o : $(GTEST_LIB_DIR)/fptree_test.cpp  
 	$(CXX) $(CXXFLAGS) -c $(GTEST_LIB_DIR)/fptree_test.cpp -I $(USER_HEADER_DIR) -o $@
