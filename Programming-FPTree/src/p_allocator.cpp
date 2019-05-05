@@ -66,10 +66,7 @@ PAllocator::PAllocator() {
     } else {
         // not exist, create catalog and free_list file, then open.
         // TODO
-        /**
-         * 判断哪个文件不存在, 然后创建该文件, 再次打开
-         * ios::out, 如果文件不存在则创建, 如果存在则清空内容
-         */
+        // 判断哪个文件不存在, 然后创建该文件
         if(!allocatorCatalog.is_open()){
             ofstream temp(allocatorCatalogPath, ios::out);
 
@@ -109,6 +106,7 @@ PAllocator::PAllocator() {
 
 PAllocator::~PAllocator() {
     // TODO
+    // 更新catalog file与free list file
     persistCatalog();
     string freeListPath = DATA_DIR + P_ALLOCATOR_FREE_LIST;
     ofstream mfile(freeListPath, ios::out|ios::binary);
@@ -123,7 +121,7 @@ PAllocator::~PAllocator() {
 // memory map all leaves to pmem address, storing them in the fId2PmAddr
 void PAllocator::initFilePmemAddr() {
     // TODO
-    // 把现有的group file映射到虚拟内存然后存入fId2PmAddr
+    // 把现有的leaf group file映射到虚拟内存然后存入fId2PmAddr
     size_t mapped_len;
     int is_pmem;
     char *pmem_addr;
@@ -141,7 +139,7 @@ void PAllocator::initFilePmemAddr() {
 // get the pmem address of the target PPointer from the map fId2PmAddr
 char* PAllocator::getLeafPmemAddr(PPointer p) {
     // TODO
-    // 得到map中存储的PPointer对应的fileId
+    // 得到map中存储的PPointer对应的fileId然后加上偏移量就是叶子的虚拟地址
     if(p.fileId == ILLEGAL_FILE_ID || p.fileId >= maxFileId)
         return NULL;
     return fId2PmAddr[p.fileId] + p.offset;
@@ -259,7 +257,7 @@ bool PAllocator::newLeafGroup() {
     if(!mfile.is_open())
         return false;
     uint64_t usedNum = 0;
-    uint8_t bit[16 * (1 + calLeafSize())];
+    uint8_t bit[LEAF_GROUP_HEAD * (1 + calLeafSize())];
     memset(bit, 0, sizeof(bit));
     mfile.write((char *)&usedNum, sizeof(uint64_t));
     mfile.write((char *)bit, sizeof(bit));
