@@ -1,32 +1,71 @@
-# 2019-DBMS-Project
-This is the programming project of DBMS course in 2019
+# 系统说明书
+----
+## 系统的基本说明
+### 系统简介
+这是一个键值对数据库系统，能够实现基本的插入，查询，更新，删除操作。并且与Google的levelDB进行性能对比。
+### 系统文件结构说明
+```
+project
+├── gtest
+├── include
+│   ├── fptree
+│   │   └── fptree.h
+│   └── utility
+│       ├── clhash.h
+│       ├── p_allocator.h
+│       └── utility.h: 注意修改头文件中的DATA_DIR路径到自己的pmem内存盘上面 
+├── README.md
+├── src
+│   ├── bin
+│   ├── clhash.c
+│   ├── fptree.cpp: (TODO)
+│   ├── lycsb.cpp: LevelDB的测试代码(TODO)(finished)
+│   ├── main.cpp
+│   ├── makefile
+│   ├── p_allocator.cpp: NVM内存分配器文件(TODO)(finished)
+│   ├── utility.cpp
+│   └── ycsb.cpp: (TODO)
+├── test
+│   ├── bin
+│   ├── fptree_test.cpp
+│   ├── makefile
+│   └── utility_test.cpp
+└── workloads
+```
+### 编译
+- 编译`src`目录下的文件
+```
+cd src
+make all
+```
+- 编译`test`目录下的文件
+```
+cd test
+mkdir bin
+make all
+```
+## 说明
+#### p_allocator.cpp
 
-## 课程设计说明
-此次课程设计分两部分，第一次作业为前期工作与论文阅读，第二次为课程设计代码编程。课程设计以小组为单位，共同完成此次课程设计。
+- Dependence: p_allocator.h, **utility.h(存放一个叶子节点对应的leafGroup文件的fileID与叶子在其中的偏移量, 声明NVM的路径并通过calLeafSize()得到叶子大小)**
+- Function: 操作粒度为leafGroup, 为叶子节点在NVM中开辟空间
+- 已通过所有的gtest
+- Details:
 
-## 注意事项
-1. 各小组请自行建立属于小组的Github仓库，所有作业小组成员通过Github协作完成（请自学Git相关操作）。
-2. 小组个人评分时只会只会看Github的贡献量，请小组自行平均分工。
-3. Github地址对其他小组保密，避免被抄袭。仓库名字可设置为自己的小组名等（避免被查找并被剽窃）。
-4. 作业要求如有问题或异议，请大胆私聊TA，让大家的课程设计可以顺利进行。
-5. **各小组切忌参考别人的代码和答案，高度雷同的小组都按抄袭处理**。
+1. **构造函数PAllocator()**: 如果catalog文件与freeList存在则初始化maxFIleId, freeNum, startLeaf, freeList变量, 如果不存在则创建相应的文件并向其中写入应有的值
+2. **析构函数~PAllocator()**: 为了模仿NVM的环境, 需要调用persistCatalog()更新catalog文件, 然后更新freeList文件.
+3. **initFilePmemAddr()**: 通过PMDK初始化各个File对应的虚拟内存地址, 把现有的leaf group file映射到虚拟内存地址中然后保存在fId2PmAddr变量中.
+4. **getLeafPmemAddr()**: 得到一个叶子对应的NVM中虚拟内存地址, 通过fId2PmAddr得到此叶子对应的leaf group的虚拟地址, 然后加上偏移量offset即是此叶子在NVM中对应的虚拟内存地址.
+5. **getLeaf()**: 申请一个叶子空间(需要先检测freeList中是否有足够的空闲叶子空间, 不够的话分配新的leaf group), 根据gtest文件, 我们把freeList中最后一个free leaf空间分配给此叶子.
+6. **ifLeafUsed()**: 根据leaf group中的bitmap判断此叶子是否使用.
+7. **ifLeafFree()**: return ifLeafUsed()? false: true;
+8. **ifLeafExist()**: 判断此叶子对应的leaf group文件是否存在, 不存在的话说明此叶子不存在
+9. **freeLeaf()**: 释放叶子在leaf group文件中的空间, 置bitmap为0, 并更新usedNum
+10. **persistCatalog()**: 持久化catalog 文件, 也就是更新catalog 文件
+11. **newLeafGroup()**: 分配一个新的leaf group文件, 写入0
 
----
-## 前期工作与论文阅读总结
-这次作业主要做部分前期工作和论文的阅读，为后面的课程设计编程部分做准备。请小组分工完成实验和问题解答，按照模板填写答案和实验结果。  
-**文档使用Markdown编写，不会的请自行学习。完成后将markdown转pdf，提交pdf。**。
 
----
-## FPTreeDB编程实现
-### 概括
-在进行NVM相关实验和FPTree论文的阅读后，想必大家对FPTree以及NVM编程已经有一个初步的了解。其实直接看FPTree的结构与普通B+tree是差不多的，存放在DRAM的中间节点的管理方式与普通B+tree一样，所以树的很多操作使用课本介绍的伪代码进行即可。FPTree的编程实现作业详情请看[作业文件夹中的README](https://github.com/ZhangJiaQiao/2019-DBMS-Project/blob/master/Programming-FPTree/README.md)  
 
-### 课程设计的好处
-成功完成此次课程设计编程作业的好处是不少的，希望大家认真对待。TA算是将自己所研究的大部分知识教会你们(TA算鸭大中等水平学生)，希望借此能助于大家未来的学业和工作。
-
-好处：
-1. 学习makefile，GoogleTest等工程开发工具的使用，有助于你们后续的项目开发(至少简单知道开发所需要的一些基本步骤)。
-2. 了解NVM编程这一前沿研究，为你们提供相关学习经历，有助于升学或者工作面试。
-3. FPTree和课上所学的B+tree很像，有助于你们更加深入了解B+tree。
-4. 通过已有的代码框架实现一个可用的键值存储系统，基本了解数据库系统开发的工作。
-5. 作为在校期间一次不错的研究经历，未来实习面试可以写入简历(项目大佬就另说，对没有机会碰触项目的同学是非常好的，至少可以跟别人说自己实现了一个键值存储系统)。
+## 任务规划
+- 在5.4晚上之前完成系统的编译框架，levelDB的测试，p_allocator的实现和测试，编写gtest的测试文件，这次作业完成后我们商讨一下剩下代码的具体分配，将其中的插入，更新，删除操作并行处理，各个组员之间并行完成。
+- 计划对于未来三周的任务以插入，更新，删除三个操作，为单位均匀分配到每个组员，独立负责。
