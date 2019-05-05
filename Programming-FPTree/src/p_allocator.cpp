@@ -54,7 +54,7 @@ PAllocator::PAllocator() {
         // 初始化maxFileId, freeNum, startLeaf, freeList
         uint64_t value[5];
         allocatorCatalog.read((char*)(&value), 4 * sizeof(uint64_t));
-        maxFileId = value[0], freeNum = value[1];
+        maxFileId = value[0] + 1, freeNum = value[1];
         startLeaf.fileId = value[2];
         startLeaf.offset = value[3];
 
@@ -151,11 +151,10 @@ char* PAllocator::getLeafPmemAddr(PPointer p) {
 // return 
 bool PAllocator::getLeaf(PPointer &p, char* &pmem_addr) {
     // TODO
-    if(freeList.empty()){
-        if(!newLeafGroup()){
+    // 得到freeList中的最后一个叶子并修改叶子对应文件中的数据.
+    if(freeList.empty())
+        if(!newLeafGroup())
             return false;
-        }
-    }
     p = freeList.back();
     pmem_addr = getLeafPmemAddr(p);
     freeList.pop_back();
@@ -170,6 +169,7 @@ bool PAllocator::getLeaf(PPointer &p, char* &pmem_addr) {
     mfile.write((char *)&(usedNum), sizeof(uint64_t));
 
     uint8_t mbyte = 1;
+    //开头usedNum 8个字节加上对应的是第几个叶子即可得到当前的叶子bitmap地址
     mfile.seekp(sizeof(uint64_t) + (p.offset - LEAF_GROUP_HEAD)/calLeafSize(), ios::beg);
     mfile.write((char *)&(mbyte), sizeof(uint8_t));
     mfile.close();
@@ -198,31 +198,37 @@ bool PAllocator::ifLeafFree(PPointer p) {
 bool PAllocator::ifLeafExist(PPointer p) {
     // TODO
     // 检查PPointer对应的文件是否存在, 如果存在则说明此叶子存在
-    if(p.fileId == ILLEGAL_FILE_ID || p.fileId >= maxFileId)
-        return false;
-    /*string name = DATA_DIR + to_string(p.fileId);
+    string name = DATA_DIR + to_string(p.fileId);
     ifstream mfile(name, ios::in | ios::binary);
     if(!mfile.is_open())
         return false;
-    mfile.close();*/
+    mfile.close();
     return true;
 }
 
 // free and reuse a leaf
 bool PAllocator::freeLeaf(PPointer p) {
     // TODO
-    // 在leaf group中的bitmap置0
+    // 在leaf group中的bitmap置0, 并修改freeList
     string name = DATA_DIR + to_string(p.fileId);
-    ofstream mfile(name, ios::out | ios::binary | ios::app);
-    if(!mfile)
+    fstream mfile(name, ios::in | ios::out | ios::binary);
+    if(!mfile.is_open())
         return false;
-    int moffset = p.offset / (56 * 16);
-    mfile.seekp(8 + moffset, ios::beg);
+    uint64_t moffset = (p.offset - LEAF_GROUP_HEAD) / calLeafSize();
+    mfile.seekp(sizeof(uint64_t) + moffset, ios::beg);
+    Byte data;
+    data = 0;
+    mfile.write((char*)&data, sizeof(data));
 
-    Byte data[5];
-    data[0] = 1;
-    mfile.write(reinterpret_cast<char *>(data), 1);
+    uint64_t usedNum;
+    mfile.seekg(0, ios::beg);
+    mfile.read((char *)&usedNum, sizeof(usedNum));
+    --usedNum;
+    mfile.seekp(0, ios::beg);
+    mfile.write((char *)&usedNum, sizeof(uint64_t));
     mfile.close();
+    freeList.push_back(p);
+    ++freeNum;
     return true;
 }
 
@@ -247,7 +253,7 @@ bool PAllocator::persistCatalog() {
 bool PAllocator::newLeafGroup() {
     // TODO
     // maxFileId代表应该创建的文件名称
-    // 一个leaf的度为56, 也就是有56个元素(键值对), 一个键值对为16字节, 所以一共是8 + 16 + 56 * 16 * 16 = 14360字节
+    // 一个leaf的度为56
     string name = DATA_DIR + std::to_string(maxFileId);
     ofstream mfile(name, ios::out | ios::binary);
     if(!mfile.is_open())
